@@ -869,6 +869,17 @@ const demo5Metadata: PullRequestMetadata = {
 +  const row = await db.query(rawSql);
 +  return cartTotal * (1 - row[0].discount_pct / 100);`,
     },
+    {
+      filename: 'src/routes/checkout.ts',
+      status: 'modified',
+      additions: 12,
+      deletions: 3,
+      patch: `@@ -45,3 +45,12 @@ router.post('/checkout/apply-promo', async (req, res) => {
++  const { promoCode, cartTotal } = req.body;
++  const finalAmount = await applyCoupon(promoCode, cartTotal);
++  res.json({ finalAmount });
++});`,
+    },
   ],
 };
 

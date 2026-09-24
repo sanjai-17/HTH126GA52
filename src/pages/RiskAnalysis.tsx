@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { AnalysisRun, NormalizedFinding } from '../types';
-import { simulateRisk } from '../services/api';
+import React, { useState, useEffect } from 'react';
+import { AnalysisRun, NormalizedFinding, PolicyCheckResult, MinimumSafePatchResult } from '../types';
+import { simulateRisk, fetchPolicyCheck, fetchMinimumSafePatch } from '../services/api';
 import { ReleaseRiskLine } from '../components/common/ReleaseRiskLine';
 import { ActionButton } from '../components/common/ActionButton';
-import { ChevronDown, CheckSquare, Square, RotateCcw } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckSquare, Square, RotateCcw, ShieldCheck, Sparkles, CheckCircle, XCircle } from 'lucide-react';
 
 interface RiskAnalysisProps {
   run: AnalysisRun;
@@ -16,7 +16,42 @@ export const RiskAnalysis: React.FC<RiskAnalysisProps> = ({ run, onSelectFinding
   const [riskReduction, setRiskReduction] = useState<number>(0);
   const [isSimulating, setIsSimulating] = useState(false);
 
+  // Policy check & Minimum Safe Patch Set state
+  const [policyData, setPolicyData] = useState<PolicyCheckResult | null>(null);
+  const [minPatchData, setMinPatchData] = useState<MinimumSafePatchResult | null>(null);
+  const [loadingMinPatch, setLoadingMinPatch] = useState(false);
+  const [showAlgorithmDetails, setShowAlgorithmDetails] = useState(false);
+  const [showAllPolicyChecks, setShowAllPolicyChecks] = useState(false);
+
   const actionableFindings = run.findings.filter((f) => f.status !== 'FALSE_POSITIVE');
+  const currentScore = run.risk.overall_score;
+
+  // Load policy check & calculate minimum safe patch
+  useEffect(() => {
+    let mounted = true;
+    fetchPolicyCheck(run.id)
+      .then((policy) => {
+        if (mounted && policy) {
+          setPolicyData(policy);
+          setLoadingMinPatch(true);
+          return fetchMinimumSafePatch(run.id, policy.risk_budget);
+        }
+        return null;
+      })
+      .then((minPatch) => {
+        if (mounted && minPatch) {
+          setMinPatchData(minPatch);
+        }
+      })
+      .catch((err) => console.error(err))
+      .finally(() => {
+        if (mounted) setLoadingMinPatch(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [run.id]);
 
   const toggleResolved = (findingId: string) => {
     let next: string[];
@@ -38,6 +73,21 @@ export const RiskAnalysis: React.FC<RiskAnalysisProps> = ({ run, onSelectFinding
     setIsSimulating(true);
     try {
       const res = await simulateRisk(run.id, resolvedIds);
+      setSimulatedScore(res.simulated_score);
+      setRiskReduction(res.risk_reduction);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSimulating(false);
+    }
+  };
+
+  const handleApplyMinimumPatch = async () => {
+    if (!minPatchData || minPatchData.finding_ids.length === 0) return;
+    setResolvedIds(minPatchData.finding_ids);
+    setIsSimulating(true);
+    try {
+      const res = await simulateRisk(run.id, minPatchData.finding_ids);
       setSimulatedScore(res.simulated_score);
       setRiskReduction(res.risk_reduction);
     } catch (err) {
@@ -71,18 +121,24 @@ export const RiskAnalysis: React.FC<RiskAnalysisProps> = ({ run, onSelectFinding
     setRiskReduction(0);
   };
 
-  const currentScore = run.risk.overall_score;
   const activeScore = simulatedScore !== undefined ? simulatedScore : currentScore;
+  const configuredBudget = policyData ? policyData.risk_budget : 40;
+  const isOverBudget = activeScore > configuredBudget;
 
   return (
     <div className="max-w-3xl mx-auto space-y-7 py-2 text-[#F0F6FC]">
       {/* 1. TOP: RELEASE RISK & SIGNATURE VISUAL */}
       <div className="space-y-3">
-        <h1 className="text-xs font-mono uppercase tracking-wider text-[#8B949E]">
-          Release risk
-        </h1>
+        <div className="flex items-baseline justify-between">
+          <h1 className="text-xs font-mono uppercase tracking-wider text-[#8B949E]">
+            Release risk
+          </h1>
+          <span className="text-xs font-mono text-[#8B949E]">
+            Configured budget: {configuredBudget}/100
+          </span>
+        </div>
 
-        <div className="flex items-baseline gap-4">
+        <div className="flex flex-wrap items-baseline gap-4">
           <div className="text-4xl font-mono font-semibold tracking-tight text-[#F0F6FC]">
             {activeScore}
             <span className="text-base font-normal text-[#586069] ml-1">/ 100</span>
@@ -98,6 +154,16 @@ export const RiskAnalysis: React.FC<RiskAnalysisProps> = ({ run, onSelectFinding
             }`}
           >
             {run.risk.risk_level}
+          </span>
+
+          <span
+            className={`text-xs font-mono font-semibold px-2 py-0.5 rounded border ${
+              isOverBudget
+                ? 'text-[#FF5C5C] bg-[#FF5C5C]/10 border-[#FF5C5C]/30'
+                : 'text-[#3FB950] bg-[#3FB950]/10 border-[#3FB950]/30'
+            }`}
+          >
+            {isOverBudget ? `OVER BUDGET (+${activeScore - configuredBudget})` : 'WITHIN BUDGET'}
           </span>
 
           {simulatedScore !== undefined && (
@@ -119,10 +185,178 @@ export const RiskAnalysis: React.FC<RiskAnalysisProps> = ({ run, onSelectFinding
 
       <div className="border-t border-[#1F2D3D]" />
 
-      {/* 2. WHY IS THE RELEASE AT RISK? */}
+      {/* 2. RELEASE RISK BUDGET & POLICY CHECKS (INNOVATION FEATURE 3) */}
+      <div className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <div className="space-y-0.5">
+            <h2 className="text-sm font-semibold text-[#F0F6FC]">
+              Repository release policy
+            </h2>
+            <p className="text-xs text-[#8B949E]">
+              Policy gates evaluated deterministically against concrete evidence.
+            </p>
+          </div>
+          {policyData && (
+            <span
+              className={`text-xs font-mono font-semibold px-2 py-0.5 rounded border ${
+                policyData.overall_status === 'WITHIN_BUDGET'
+                  ? 'text-[#3FB950] bg-[#3FB950]/10 border-[#3FB950]/30'
+                  : policyData.overall_status === 'BLOCKED'
+                  ? 'text-[#FF5C5C] bg-[#FF5C5C]/10 border-[#FF5C5C]/30'
+                  : 'text-[#FFB547] bg-[#FFB547]/10 border-[#FFB547]/30'
+              }`}
+            >
+              {policyData.overall_status.replace(/_/g, ' ')}
+            </span>
+          )}
+        </div>
+
+        {policyData && (
+          <div className="divide-y divide-[#1F2D3D] border-y border-[#1F2D3D] text-xs">
+            {policyData.checks.map((check) => (
+              <div key={check.id} className="py-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {check.passed ? (
+                    <CheckCircle className="w-4 h-4 text-[#3FB950] shrink-0" />
+                  ) : (
+                    <XCircle className="w-4 h-4 text-[#FF5C5C] shrink-0" />
+                  )}
+                  <span className="text-[#F0F6FC] font-medium">{check.name}</span>
+                  <span className="text-[#586069] font-mono text-[11px] hidden sm:inline">
+                    ({check.actual_value} / target {check.threshold_value})
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 font-mono text-[11px] shrink-0">
+                  <span
+                    className={`px-1.5 py-0.5 rounded font-semibold ${
+                      check.passed ? 'text-[#3FB950] bg-[#3FB950]/10' : 'text-[#FF5C5C] bg-[#FF5C5C]/10'
+                    }`}
+                  >
+                    {check.passed ? 'PASS' : 'FAIL'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-[#1F2D3D]" />
+
+      {/* 3. MINIMUM SAFE PATCH SET (INNOVATION FEATURE 1) */}
+      <div className="space-y-4">
+        <div className="flex items-baseline justify-between">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-[#F0F6FC]">
+                Minimum safe patch set
+              </h2>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded border border-[#B8F34A]/40 text-[#B8F34A] bg-[#B8F34A]/10">
+                OPTIMIZED
+              </span>
+            </div>
+            <p className="text-xs text-[#8B949E]">
+              Smallest set of actionable fixes required to bring release risk within budget ({configuredBudget}).
+            </p>
+          </div>
+
+          {minPatchData && (
+            <span className="text-xs font-mono text-[#8B949E]">
+              {minPatchData.fix_count} fix{minPatchData.fix_count === 1 ? '' : 'es'} required
+            </span>
+          )}
+        </div>
+
+        {minPatchData && minPatchData.status === 'WITHIN_BUDGET' ? (
+          <div className="p-4 rounded border border-[#1F2D3D] bg-[#111923] space-y-3 text-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#1F2D3D]/60 font-mono">
+              <div className="flex items-center gap-2 text-[#F0F6FC]">
+                <span>Projected risk:</span>
+                <span className="text-[#FF5C5C] font-semibold">{minPatchData.current_risk}</span>
+                <span>→</span>
+                <span className="text-[#B8F34A] font-bold">{minPatchData.projected_risk}</span>
+                <span className="text-[#3FB950] font-semibold">(-{minPatchData.risk_reduction} pts)</span>
+              </div>
+              <div className="text-[11px] text-[#8B949E]">
+                Effort:{' '}
+                <span className="text-[#F0F6FC] font-semibold">
+                  {minPatchData.total_effort}
+                </span>
+              </div>
+            </div>
+
+            {/* List of fixes in this minimum set */}
+            <div className="space-y-2">
+              <div className="text-[11px] font-mono uppercase text-[#8B949E]">
+                Required fixes to reach budget ({minPatchData.findings.length}):
+              </div>
+              <div className="divide-y divide-[#1F2D3D] bg-[#0B1117] rounded border border-[#1F2D3D] px-2.5">
+                {minPatchData.findings.map((f, idx) => (
+                  <div key={f.id} className="py-2 flex items-center justify-between">
+                    <div className="truncate pr-2">
+                      <span className="font-mono text-[#8B949E] mr-2">#{idx + 1}</span>
+                      <span className="text-[#F0F6FC] font-medium">{f.title}</span>
+                      <span className="font-mono text-[11px] text-[#586069] ml-2">{f.file}:{f.line_start}</span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0 font-mono text-[11px]">
+                      <span className="text-[#B8F34A] font-semibold">-{f.expected_risk_reduction} risk</span>
+                      <span className="text-[#8B949E]">
+                        {f.fix_effort ? `Effort: ${f.fix_effort}` : 'Effort: UNKNOWN'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+              <ActionButton
+                variant="primary"
+                size="sm"
+                icon={Sparkles}
+                onClick={handleApplyMinimumPatch}
+              >
+                Simulate minimum safe patch
+              </ActionButton>
+
+              <button
+                onClick={() => setShowAlgorithmDetails(!showAlgorithmDetails)}
+                className="text-xs text-[#8B949E] hover:text-[#F0F6FC] flex items-center gap-1 font-mono cursor-pointer"
+              >
+                <span>How was this selected?</span>
+                {showAlgorithmDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+
+            {showAlgorithmDetails && (
+              <div className="p-3 rounded bg-[#0B1117] border border-[#1F2D3D] space-y-1.5 text-[11px] font-mono text-[#8B949E]">
+                <div className="text-[#F0F6FC] font-semibold">Deterministic Selection Model:</div>
+                <p>{minPatchData.selection_reason}</p>
+                <div className="text-[#586069] pt-1">
+                  Algorithm: {minPatchData.algorithm} ({minPatchData.evaluated_combinations_count} combinations evaluated).
+                  Zero arbitrary LLM values; all projections computed via the canonical counterfactual risk engine.
+                </div>
+              </div>
+            )}
+          </div>
+        ) : minPatchData?.status === 'ALREADY_WITHIN_BUDGET' ? (
+          <div className="p-3.5 rounded border border-[#3FB950]/30 bg-[#3FB950]/10 text-xs font-mono text-[#3FB950]">
+            Release risk ({currentScore}) already satisfies configured budget (≤ {configuredBudget}). No mandatory patches required.
+          </div>
+        ) : (
+          <div className="p-3.5 rounded border border-[#1F2D3D] bg-[#111923] text-xs font-mono text-[#8B949E]">
+            {loadingMinPatch ? 'Evaluating minimum safe patch set...' : 'No available subset of currently actionable fixes reaches the budget.'}
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-[#1F2D3D]" />
+
+      {/* 4. WHY IS THE RELEASE AT RISK? */}
       <div className="space-y-3">
         <h2 className="text-sm font-semibold text-[#F0F6FC]">
-          Why is the release at risk?
+          Where the risk comes from
         </h2>
 
         <div className="divide-y divide-[#1F2D3D] border-y border-[#1F2D3D] text-xs">
@@ -153,15 +387,15 @@ export const RiskAnalysis: React.FC<RiskAnalysisProps> = ({ run, onSelectFinding
 
       <div className="border-t border-[#1F2D3D]" />
 
-      {/* 3. IF YOU FIX THESE */}
+      {/* 5. INTERACTIVE COUNTERFACTUAL SIMULATOR */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
             <h2 className="text-sm font-semibold text-[#F0F6FC]">
-              If you fix these
+              Interactive fix simulation
             </h2>
             <p className="text-xs text-[#8B949E]">
-              Select issues to project risk reduction before merging.
+              Select issues manually to test counterfactual risk reduction.
             </p>
           </div>
 
@@ -246,51 +480,6 @@ export const RiskAnalysis: React.FC<RiskAnalysisProps> = ({ run, onSelectFinding
           )}
         </div>
       </div>
-
-      <div className="border-t border-[#1F2D3D]" />
-
-      {/* 4. SECONDARY: HOW IS THIS CALCULATED? */}
-      <details className="group border border-[#1F2D3D] rounded bg-[#111923] p-3 text-xs">
-        <summary className="cursor-pointer font-medium text-[#8B949E] hover:text-[#F0F6FC] flex items-center justify-between select-none">
-          <span>How is this calculated?</span>
-          <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180 text-[#586069]" />
-        </summary>
-
-        <div className="mt-3 space-y-3.5 text-xs text-[#8B949E] border-t border-[#1F2D3D] pt-3">
-          <div className="space-y-1">
-            <h4 className="font-medium text-[#F0F6FC]">Mathematical Model</h4>
-            <p className="leading-relaxed">
-              Risk score = Base finding severity weights × Reachability coefficient (1.5× for user-controlled input, 2.0× for sensitive sinks) + Blast radius penalty + Dependency factor, normalized to 0–100.
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <h4 className="font-medium text-[#F0F6FC]">Blast Radius Metrics</h4>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 font-mono text-[11px]">
-              <div className="p-2 rounded bg-[#0B1117] border border-[#1F2D3D]">
-                <div className="text-[#586069]">Files</div>
-                <div className="text-[#F0F6FC] mt-0.5">{run.blast_radius.files_affected}</div>
-              </div>
-              <div className="p-2 rounded bg-[#0B1117] border border-[#1F2D3D]">
-                <div className="text-[#586069]">Functions</div>
-                <div className="text-[#F0F6FC] mt-0.5">{run.blast_radius.functions_affected}</div>
-              </div>
-              <div className="p-2 rounded bg-[#0B1117] border border-[#1F2D3D]">
-                <div className="text-[#586069]">Modules</div>
-                <div className="text-[#F0F6FC] mt-0.5">{run.blast_radius.modules_affected}</div>
-              </div>
-              <div className="p-2 rounded bg-[#0B1117] border border-[#1F2D3D]">
-                <div className="text-[#586069]">Endpoints</div>
-                <div className="text-[#F0F6FC] mt-0.5">{run.blast_radius.api_endpoints}</div>
-              </div>
-              <div className="p-2 rounded bg-[#0B1117] border border-[#1F2D3D]">
-                <div className="text-[#586069]">DB paths</div>
-                <div className="text-[#F0F6FC] mt-0.5">{run.blast_radius.db_paths}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </details>
     </div>
   );
 };

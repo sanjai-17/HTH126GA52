@@ -227,3 +227,104 @@ export interface DeveloperFeedbackRecord {
   notes?: string;
   created_at: string;
 }
+
+// -------------------------------------------------------------
+// ADDITIVE INNOVATION TYPES: RISK BUDGET, MIN SAFE PATCH, INTENT/IMPACT
+// -------------------------------------------------------------
+
+export interface ReleasePolicy {
+  id: string;
+  repository_id: string;
+  risk_budget: number; // 0 - 100, e.g. 40
+  max_critical_security: number; // 0
+  max_high_security: number; // 0
+  require_verified_fixes: boolean; // e.g. true
+  require_tests_passed: boolean; // e.g. true
+  updated_at: string;
+}
+
+export type PolicyEvaluationState =
+  | 'WITHIN_BUDGET'
+  | 'OVER_BUDGET'
+  | 'BLOCKED'
+  | 'WARNING'
+  | 'VERIFICATION_REQUIRED';
+
+export interface PolicyCheckItem {
+  id: string;
+  name: string;
+  passed: boolean;
+  actual_value: string | number;
+  threshold_value: string | number;
+  message: string;
+  evidence?: string;
+}
+
+export interface PolicyCheckResult {
+  policy: ReleasePolicy;
+  overall_status: PolicyEvaluationState;
+  score: number;
+  risk_budget: number;
+  budget_delta: number; // positive = over budget, negative/0 = within budget
+  checks: PolicyCheckItem[];
+  reasons: string[];
+  evaluated_at: string;
+}
+
+export type IntentCategory =
+  | 'DEPENDENCY'
+  | 'AUTHENTICATION'
+  | 'AUTHORIZATION'
+  | 'DATABASE'
+  | 'API'
+  | 'UI'
+  | 'BUSINESS_LOGIC'
+  | 'PERFORMANCE'
+  | 'TESTING'
+  | 'REFACTORING'
+  | 'CONFIGURATION'
+  | 'LOGGING'
+  | 'SECURITY'
+  | 'OTHER';
+
+export interface IntentImpactEvidence {
+  area: IntentCategory;
+  file: string;
+  line?: number;
+  function_name?: string;
+  source: string;
+  description: string;
+}
+
+export interface IntentImpactAnalysis {
+  id: string;
+  analysis_id: string;
+  declared_scope: IntentCategory[];
+  actual_impact: IntentCategory[];
+  additional_impact: IntentCategory[];
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW' | 'INSUFFICIENT_EVIDENCE';
+  status: 'ADDITIONAL_IMPACT_DETECTED' | 'ALIGNED' | 'INSUFFICIENT_EVIDENCE';
+  declared_summary: string;
+  actual_summary: string;
+  evidence: IntentImpactEvidence[];
+  created_at: string;
+}
+
+export interface MinimumSafePatchResult {
+  id: string;
+  analysis_id: string;
+  risk_budget: number;
+  current_risk: number;
+  projected_risk: number;
+  risk_reduction: number;
+  fix_count: number;
+  finding_ids: string[];
+  findings: NormalizedFinding[];
+  total_effort: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN';
+  status: 'WITHIN_BUDGET' | 'ALREADY_WITHIN_BUDGET' | 'NO_SOLUTION_FOUND';
+  algorithm: 'BRANCH_AND_BOUND_EXACT' | 'BOUNDED_SEARCH';
+  selection_reason: string;
+  evaluated_combinations_count: number;
+  created_at: string;
+}
+

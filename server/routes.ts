@@ -15,6 +15,9 @@ import {
   getDeveloperFeedback,
   recordDeveloperFeedback,
 } from './repositoryMemoryService';
+import { calculateMinimumSafePatchSet } from './minimumSafePatchEngine';
+import { analyzeIntentVsImpact } from './intentImpactEngine';
+import { getReleasePolicy, updateReleasePolicy, evaluateReleasePolicy } from './releasePolicyService';
 
 export const apiRouter = Router();
 
@@ -389,6 +392,55 @@ apiRouter.post('/risk/simulate', (req, res) => {
     recalculated_risk: recalculatedRisk,
     resolved_count: resolved.length,
   });
+});
+
+// POST /api/risk/minimum-safe-patch (Minimum Safe Patch Set Optimization)
+apiRouter.post('/risk/minimum-safe-patch', (req, res) => {
+  const { analysis_id, runId, risk_budget } = req.body || {};
+  const targetId = analysis_id || runId;
+  let run: AnalysisRun | undefined;
+  if (targetId) {
+    run = activeAnalysisRuns.get(targetId);
+  }
+  if (!run) {
+    // Fallback to initial run or latest active run
+    run = Array.from(activeAnalysisRuns.values())[activeAnalysisRuns.size - 1] || initialRun;
+  }
+
+  const budget = typeof risk_budget === 'number' ? risk_budget : 40;
+  const result = calculateMinimumSafePatchSet(run, budget);
+  res.json(result);
+});
+
+// GET /api/analysis/:id/intent-impact (PR Intent vs Actual Impact)
+apiRouter.get('/analysis/:id/intent-impact', (req, res) => {
+  const { id } = req.params;
+  const run = activeAnalysisRuns.get(id) || initialRun;
+  const result = analyzeIntentVsImpact(run);
+  res.json(result);
+});
+
+// GET /api/analysis/:id/policy-check (Release Policy & Risk Budget Evaluation)
+apiRouter.get('/analysis/:id/policy-check', (req, res) => {
+  const { id } = req.params;
+  const run = activeAnalysisRuns.get(id) || initialRun;
+  const repoId = run.pr.repository || 'default';
+  const policy = getReleasePolicy(repoId);
+  const evaluation = evaluateReleasePolicy(run, policy);
+  res.json(evaluation);
+});
+
+// GET /api/policy (Current Release Policy)
+apiRouter.get('/policy', (req, res) => {
+  const repoId = (req.query.repo as string) || 'default';
+  res.json(getReleasePolicy(repoId));
+});
+
+// POST /api/policy (Update Release Policy)
+apiRouter.post('/policy', (req, res) => {
+  const repoId = (req.body?.repository_id as string) || 'default';
+  const updated = updateReleasePolicy(repoId, req.body || {});
+  res.json(updated);
 });
 
 // GET /api/evaluation

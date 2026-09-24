@@ -6,6 +6,10 @@ import {
   OverallEvaluationMetrics,
   RepositoryMemoryItem,
   DeveloperFeedbackRecord,
+  ReleasePolicy,
+  PolicyCheckResult,
+  IntentImpactAnalysis,
+  MinimumSafePatchResult,
 } from '../types';
 
 const API_BASE = '/api';
@@ -171,3 +175,42 @@ export async function fetchSettings() {
   if (!res.ok) throw new Error(`Failed to fetch settings: ${res.statusText}`);
   return res.json();
 }
+
+export async function fetchMinimumSafePatch(analysisId: string, riskBudget?: number): Promise<MinimumSafePatchResult> {
+  const res = await fetch(`${API_BASE}/risk/minimum-safe-patch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ analysis_id: analysisId, risk_budget: riskBudget }),
+  });
+  if (!res.ok) throw new Error(`Minimum safe patch calculation failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchIntentImpact(analysisId: string): Promise<IntentImpactAnalysis> {
+  const res = await fetch(`${API_BASE}/analysis/${analysisId}/intent-impact`);
+  if (!res.ok) throw new Error(`Intent vs impact analysis failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchPolicyCheck(analysisId: string): Promise<PolicyCheckResult> {
+  const res = await fetch(`${API_BASE}/analysis/${analysisId}/policy-check`);
+  if (!res.ok) throw new Error(`Release policy check failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchReleasePolicy(repoId: string = 'default'): Promise<ReleasePolicy> {
+  const res = await fetch(`${API_BASE}/policy?repo=${encodeURIComponent(repoId)}`);
+  if (!res.ok) throw new Error(`Failed to fetch release policy: ${res.statusText}`);
+  return res.json();
+}
+
+export async function updateReleasePolicyConfig(policy: Partial<ReleasePolicy>): Promise<ReleasePolicy> {
+  const res = await fetch(`${API_BASE}/policy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(policy),
+  });
+  if (!res.ok) throw new Error(`Failed to update release policy: ${res.statusText}`);
+  return res.json();
+}
+
