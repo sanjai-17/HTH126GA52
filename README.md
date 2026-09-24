@@ -4,7 +4,6 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-v4-38bdf8.svg)](https://tailwindcss.com/)
-[![License](https://img.shields.io/badge/License-MIT-purple.svg)](#license)
 
 > **A developer-first Release Engineering Console & DevSecOps Platform for GitHub Pull Requests.**  
 > CodeGuard replaces noisy alerts and hallucinated AI suggestions with **evidence-grounded code review**, **PR Intent vs. Actual Impact auditing**, **deterministic risk budgeting**, and a **Minimum Safe Patch Set optimization engine**.
@@ -285,9 +284,3 @@ When presenting CodeGuard to evaluators or stakeholders, highlight these core pi
 2. **Deterministic & Trustworthy**: Risk calculations and policy evaluations are 100% deterministic and mathematically explainable.
 3. **Optimized for Developer Speed**: Instead of handing developers a list of 100 warnings, the **Minimum Safe Patch Set** tells them the exact 1 or 2 verified fixes needed to ship on time.
 4. **Protects Production**: The **PR Intent vs. Actual Impact** engine guards against stealthy bugs and accidental scope creep before they hit production.
-
----
-
-## 📄 License
-This project is open source and available under the [MIT License](LICENSE).
-
