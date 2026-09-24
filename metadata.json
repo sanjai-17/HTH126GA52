@@ -1,0 +1,6 @@
+{
+  "name": "AI Code Review & Release-Risk Assistant",
+  "description": "Evidence-grounded AI code review, contextual false-positive shield, deterministic release-risk engine, and verified autofix for Pull Requests.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
